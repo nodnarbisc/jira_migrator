@@ -1,12 +1,22 @@
+//This script is used for migrating Jira Issues into ClickUp as Tasks.
+//Here's what it can do:
+//Create a clickup task for every jira issue found using the specified jql query
+//Create subtasks in clickup and keep the same subtask structure that was in Jira (will handle all layers)
+//Migrate custom fields
+//Automatically finds custom field IDs on clickup, can handle dropdown options, and multiple labels.
+//Migrate Comments (takes all Jira comments and rolls them up into one big clickup comment, but it does say who said what.)
+//Migrate attachments
+
 const fs = require("fs");
 const https = require("https");
 const axios = require("axios");
 const FormData = require("form-data");
 const colors = require("colors");
-const listId = "128208018";
-const maxResults = 100;
+const listId = "128208018"; //List to migrate to
+const maxResults = 100; //number of records to pull from Jira in one go (max is 100)
 const { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } = require("node-html-markdown");
 const CUKey = "pk_24633738_X2B7OX05XVPK72DMFZ3PG24V0DRQB4DJ";
+const jqlQuery = `project = LE and status = "closed" and type != sub-task ORDER BY created DESC`;
 
 let customFields;
 
@@ -29,18 +39,15 @@ const main = async () => {
 
 	let URL = `https://lingotek.atlassian.net/rest/api/3/search`;
 
-	let offset = 1929;
-
-	//New (not started), Backlog (Active Statuses), In Progress (Active Statuses), Closed (Closed Status)
+	let offset = 0;
 
 	let done = false;
 	while (!done) {
 		let body = {
-			jql: `project = LE and status = "closed" and type != sub-task ORDER BY created DESC`,
+			jql: jqlQuery,
 			maxResults: maxResults,
 			startAt: offset,
 		};
-
 		res = await axios.post(URL, body, { headers: JiraHeaders });
 		let issues = res.data.issues;
 		console.log(`Total Issues found: ${res.data.total}`.yellow);
