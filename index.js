@@ -8,28 +8,32 @@
 //Migrate attachments
 
 const fs = require("fs");
-const https = require("https");
 const axios = require("axios");
 const FormData = require("form-data");
 const colors = require("colors");
-const listId = "128208018"; //List to migrate to
+const listId = ""; //List to migrate to
 const maxResults = 100; //number of records to pull from Jira in one go (max is 100)
 const { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } = require("node-html-markdown");
-const CUKey = "pk_24633738_X2B7OX05XVPK72DMFZ3PG24V0DRQB4DJ";
-const jqlQuery = `project = LE and status = "closed" and type != sub-task ORDER BY created DESC`;
+const CUKey = ""; //ClickUp API Key
+const JiraKey = ""; //Jira API Key
+const jqlQuery = 'project = LE and status = "closed" and type != sub-task ORDER BY created DESC`='; // Modify this to query for whatever data you want to migrate
+const jiraURL = "https://example.atlassian.net"; //The Jira instance we're pulling data from.
 
 let customFields;
 
+//headers for calls to Jira API
 const JiraHeaders = {
-	Authorization: "Basic amZvbGV5QGNsaWNrdXAuY29tOmhzdXRUSzNWVVdMdU1WZkI2bXR4NzYzQw==",
+	Authorization: JiraKey,
 	"Content-Type": "application/json",
 };
 
+//Headers for calls to ClickUp API.
 const CUHeaders = {
-	Authorization: "pk_24633738_X2B7OX05XVPK72DMFZ3PG24V0DRQB4DJ",
+	Authorization: CUKey,
 	"Content-Type": "application/json",
 };
 
+//
 const main = async () => {
 	//Get the custom fields for the list we're importing to:
 	let res = await axios.get(`https://api.clickup.com/api/v2/list/${listId}/field`, { headers: CUHeaders });
@@ -37,33 +41,36 @@ const main = async () => {
 	//res = await axios.get(`https://app.asana.com/api/1.0/projects`, { headers: AsanaHeaders });
 	//projects = res.data;
 
-	let URL = `https://lingotek.atlassian.net/rest/api/3/search`;
+	let URL = `${jiraURL}/rest/api/3/search`;
 
-	let offset = 0;
-
+	let offset = 0; //initial offset. Use this if an error occurs during the migration and you don't want to start over.
 	let done = false;
+
+	//pull 100 jira issues at a time until no more issues are found
 	while (!done) {
 		let body = {
 			jql: jqlQuery,
 			maxResults: maxResults,
 			startAt: offset,
 		};
-		res = await axios.post(URL, body, { headers: JiraHeaders });
+		res = await axios.post(URL, body, { headers: JiraHeaders }); //Make the call to jira to pull 100 issues
 		let issues = res.data.issues;
 		console.log(`Total Issues found: ${res.data.total}`.yellow);
 		if (issues.length < 1) {
+			//check if that was the last page.
 			done = true;
 			console.log("THAT WAS THE LAST PAGE>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
 			continue;
 		}
-		console.log(`Offset = ${offset}. Starting with issue ID ${issues[0].id}`.brightGreen);
-		offset += maxResults;
+		console.log(`Offset = ${offset}. Starting with issue ID ${issues[0].id}`.brightGreen); //Log the offset. If an error occurs, change the offset variable above to whatever this said.
+		offset += maxResults; //update the offset
 
 		for (let i = 0; i < issues.length; i++) {
-			await delay(3000);
+			//loop through the issues.
+			await delay(3000); //pause to avoid rate limiting and CU API errors.
 			try {
 				console.log(`${offset + i - 100}`.white.bgMagenta);
-				createTask(issues[i]);
+				createTask(issues[i]); //create the task
 			} catch (err) {
 				console.log(`<<ERROR>> creating task: ${issues[i].fields.key}`.brightRed);
 				console.log(err.response.data);
@@ -77,7 +84,7 @@ const createTask = async (issue, parent = null) => {
 		console.log(`Creating Task: ${issue.key}, ${issue.id}`.brightBlue);
 
 		//get the full version of the task:
-		let res = await axios.get(`https://lingotek.atlassian.net/rest/api/3/issue/${issue.key}?expand=renderedFields`, {
+		let res = await axios.get(`${jiraURL}/rest/api/3/issue/${issue.key}?expand=renderedFields`, {
 			headers: JiraHeaders,
 		});
 		issue = res.data;
@@ -96,16 +103,16 @@ const createTask = async (issue, parent = null) => {
 			notify_all: false,
 			check_required_custom_fields: false,
 			custom_fields: [
-				// {
-				// 	id: findCFID("Development Team"),
-				// 	value: issue.fields.customfield_13200
-				// 		? findCFOptionID(issue.fields.customfield_13200[0].value, "Development Team")
-				// 		: null,
-				// },
-				// {
-				// 	id: findCFID("Priority"),
-				// 	value: issue.fields.priority ? findCFOptionID(issue.fields.priority.name, "Priority") : null,
-				// },
+				{
+					id: findCFID("Development Team"),
+					value: issue.fields.customfield_13200
+						? findCFOptionID(issue.fields.customfield_13200[0].value, "Development Team")
+						: null,
+				},
+				{
+					id: findCFID("Priority"),
+					value: issue.fields.priority ? findCFOptionID(issue.fields.priority.name, "Priority") : null,
+				},
 				{
 					id: findCFID("Issue Type"),
 					value: findCFOptionID(issue.fields.issuetype.name, "Issue Type"),
@@ -114,14 +121,14 @@ const createTask = async (issue, parent = null) => {
 					id: findCFID("Created"),
 					value: new Date(issue.fields.created).getTime(),
 				},
-				// {
-				// 	id: findCFID("Incident End"),
-				// 	value: issue.fields.customfield_13403 ? new Date(issue.fields.customfield_13403).getTime() : null,
-				// },
-				// {
-				// 	id: findCFID("Incident Start"),
-				// 	value: issue.fields.customfield_13402 ? new Date(issue.fields.customfield_13402).getTime() : null,
-				// },
+				{
+					id: findCFID("Incident End"),
+					value: issue.fields.customfield_13403 ? new Date(issue.fields.customfield_13403).getTime() : null,
+				},
+				{
+					id: findCFID("Incident Start"),
+					value: issue.fields.customfield_13402 ? new Date(issue.fields.customfield_13402).getTime() : null,
+				},
 				{
 					id: findCFID("Updated"),
 					value: new Date(issue.fields.updated).getTime(),
@@ -134,14 +141,14 @@ const createTask = async (issue, parent = null) => {
 					id: findCFID("Jira Assignee"),
 					value: issue.fields.assignee ? issue.fields.assignee.displayName : null,
 				},
-				// {
-				// 	id: findCFID("PM Assignee"),
-				// 	value: issue.fields.customfield_10900 ? issue.fields.customfield_10900.displayName : null,
-				// },
-				// {
-				// 	id: findCFID("QA Assignee"),
-				// 	value: null,
-				// },
+				{
+					id: findCFID("PM Assignee"),
+					value: issue.fields.customfield_10900 ? issue.fields.customfield_10900.displayName : null,
+				},
+				{
+					id: findCFID("QA Assignee"),
+					value: null,
+				},
 				{
 					id: findCFID("Jira Reporter"),
 					value: issue.fields.reporter.displayName,
@@ -150,76 +157,76 @@ const createTask = async (issue, parent = null) => {
 					id: findCFID("Resolution (New)"),
 					value: issue.fields.resolution ? issue.fields.resolution.name : "Unresolved",
 				},
-				// {
-				// 	id: findCFID("Sprint"),
-				// 	value: issue.fields.customfield_10007 ? issue.fields.customfield_10007[0].name : null,
-				// },
-				// {
-				// 	id: findCFID("Story Points"),
-				// 	value: issue.fields.customfield_10004,
-				// },
-				// {
-				// 	id: findCFID("Summary"),
-				// 	value: issue.fields.summary,
-				// },
+				{
+					id: findCFID("Sprint"),
+					value: issue.fields.customfield_10007 ? issue.fields.customfield_10007[0].name : null,
+				},
+				{
+					id: findCFID("Story Points"),
+					value: issue.fields.customfield_10004,
+				},
+				{
+					id: findCFID("Summary"),
+					value: issue.fields.summary,
+				},
 				{
 					id: findCFID("Client"),
 					value: createLabelArray(issue.fields.customfield_10300, "Client"),
 				},
-				// {
-				// 	id: findCFID("Components"),
-				// 	value: issue.fields.components
-				// 		? createLabelArray(
-				// 				issue.fields.components.map((a) => a.name),
-				// 				"Components"
-				// 		  )
-				// 		: null,
-				// },
-				// {
-				// 	id: findCFID("Product"),
-				// 	value: issue.fields.customfield_13300
-				// 		? createLabelArray(
-				// 				issue.fields.customfield_13300.map((a) => a.value),
-				// 				"Product"
-				// 		  )
-				// 		: null,
-				// },
-				// {
-				// 	id: findCFID("Required Documentation"),
-				// 	value: issue.fields.customfield_13500
-				// 		? createLabelArray(
-				// 				issue.fields.customfield_13500.map((a) => a.value),
-				// 				"Required Documentation"
-				// 		  )
-				// 		: null,
-				// },
-				// {
-				// 	id: findCFID("Invoiceable Amount"),
-				// 	value: issue.fields.customfield_13670,
-				// },
-				// {
-				// 	id: findCFID("Root Cause"),
-				// 	value: issue.fields.customfield_13400 ? issue.fields.customfield_13400.content[0].text : null,
-				// },
-				// {
-				// 	id: findCFID("Uptime Impact"),
-				// 	value: issue.fields.customfield_13401,
-				// },
-				// {
-				// 	id: findCFID("Epic Key"),
-				// 	value: issue.fields.customfield_10008 ? issue.fields.customfield_10008 : null,
-				// },
-				// {
-				// 	id: findCFID("Jira ID"),
-				// 	value: issue.id,
-				// },
-				// {
-				// 	id: findCFID("Issue Links"),
-				// 	value:
-				// 		issue.fields.issuelinks && issue.fields.issuelinks.length > 0
-				// 			? JSON.stringify(getIssueLinks(issue.fields.issuelinks))
-				// 			: null,
-				// },
+				{
+					id: findCFID("Components"),
+					value: issue.fields.components
+						? createLabelArray(
+								issue.fields.components.map((a) => a.name),
+								"Components"
+						  )
+						: null,
+				},
+				{
+					id: findCFID("Product"),
+					value: issue.fields.customfield_13300
+						? createLabelArray(
+								issue.fields.customfield_13300.map((a) => a.value),
+								"Product"
+						  )
+						: null,
+				},
+				{
+					id: findCFID("Required Documentation"),
+					value: issue.fields.customfield_13500
+						? createLabelArray(
+								issue.fields.customfield_13500.map((a) => a.value),
+								"Required Documentation"
+						  )
+						: null,
+				},
+				{
+					id: findCFID("Invoiceable Amount"),
+					value: issue.fields.customfield_13670,
+				},
+				{
+					id: findCFID("Root Cause"),
+					value: issue.fields.customfield_13400 ? issue.fields.customfield_13400.content[0].text : null,
+				},
+				{
+					id: findCFID("Uptime Impact"),
+					value: issue.fields.customfield_13401,
+				},
+				{
+					id: findCFID("Epic Key"),
+					value: issue.fields.customfield_10008 ? issue.fields.customfield_10008 : null,
+				},
+				{
+					id: findCFID("Jira ID"),
+					value: issue.id,
+				},
+				{
+					id: findCFID("Issue Links"),
+					value:
+						issue.fields.issuelinks && issue.fields.issuelinks.length > 0
+							? JSON.stringify(getIssueLinks(issue.fields.issuelinks))
+							: null,
+				},
 			],
 		};
 
@@ -239,7 +246,7 @@ const createTask = async (issue, parent = null) => {
 					let id = issue.fields.attachment[k].id;
 					let fileName = issue.fields.attachment[k].filename;
 					let path = `./temp/${fileName}`;
-					let URL = `https://lingotek.atlassian.net/rest/api/3/attachment/content/${id}`;
+					let URL = `${jiraURL}/rest/api/3/attachment/content/${id}`;
 					//Download the attachment
 					try {
 						await downloadFile(URL, path);
@@ -339,6 +346,7 @@ const createTask = async (issue, parent = null) => {
 	});
 };
 
+//Takes a jira issuelink field and Returns an array of jira ids.
 const getIssueLinks = (links) => {
 	let linkIds = [];
 	links.forEach((link) => {
@@ -352,6 +360,7 @@ const getIssueLinks = (links) => {
 	return linkIds;
 };
 
+//Takes a custom field name and returns the ID for the custom field.
 const findCFID = (name) => {
 	let id = customFields.fields.filter((item) => {
 		return item.name == name;
@@ -363,6 +372,8 @@ const findCFID = (name) => {
 	}
 };
 
+//This function takes a  custom field option name and a custom field name and returns
+//the ID of the custom field value. It depends on the function findCFID.
 const findCFOptionID = (CFValue, CFName) => {
 	if (!CFValue) {
 		return null;
@@ -406,20 +417,6 @@ const createLabelArray = (jiraFieldData, CFName) => {
 	return idArray;
 };
 
-const download_image = (url, image_path) =>
-	axios({
-		url,
-		responseType: "stream",
-	}).then(
-		(response) =>
-			new Promise((resolve, reject) => {
-				response.data
-					.pipe(fs.createWriteStream(image_path))
-					.on("finish", () => resolve())
-					.on("error", (e) => reject(e));
-			})
-	);
-
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const formatDate = (d) => {
@@ -435,11 +432,9 @@ const formatDate = (d) => {
 
 async function downloadFile(fileUrl, outputLocationPath) {
 	const writer = fs.createWriteStream(outputLocationPath);
-
 	return axios.get(fileUrl, { headers: JiraHeaders, responseType: "stream" }).then((response) => {
 		//ensure that the user can call `then()` only when the file has
 		//been downloaded entirely.
-
 		return new Promise((resolve, reject) => {
 			response.data.pipe(writer);
 			let error = null;
